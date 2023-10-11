@@ -1,50 +1,81 @@
 #!/bin/bash
 
-set -eu
+HEADERS=(-H "X-Auth-Email: $EMAIL" -H "X-Auth-Key: $API_KEY" -H "Content-Type: application/json")
 
-if [[ "${DEBUG:-}" == "true" ]]; then # permit debugging
-  echo "Debug mode is on, this will expose secrets on stderr" 1>&2
-  set -x
+# Load cache if exists
+if [[ -f $CACHE_FILE ]]; then
+    source $CACHE_FILE
 fi
 
-# The -v test determines if a variable is set, even if empty. (Bash 4.3+)
-if [[ ! -v AUTH_HEADERS ]]; then
-  if [[ -v API_TOKEN ]]; then # API_TOKEN is set, prefer to use it
-    echo "Using API_TOKEN for authentication" 1>&2
-    AUTH_HEADERS=(-H "Authorization: Bearer $API_TOKEN")
-  elif [[ -v AUTH_EMAIL && -v AUTH_KEY ]]; then
-    echo "Using AUTH_EMAIL/AUTH_KEY for authentication" 1>&2
-    AUTH_HEADERS=(-H "X-Auth-Email: $AUTH_EMAIL" -H "X-Auth-Key: $AUTH_KEY")
-  else
-    echo "Neither API_TOKEN nor AUTH_EMAIL and AUTH_KEY were provided, failing" 1>&2
+# Get the Zone ID
+if [[ -z $ZONE_ID ]]; then
+    echo "Fetching Zone ID"
+    ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
+    "${HEADERS[@]}" | jq -r '.result[0].id')
+    echo "Fetched Zone ID: $ZONE_ID"
+    echo "ZONE_ID=$ZONE_ID" >> $CACHE_FILE
+else
+    echo "Using cached Zone ID: $ZONE_ID"
+fi
+
+# Check for a valid Zone ID
+if [ -z "$ZONE_ID" ]; then
+    echo "Failed to retrieve Zone ID"
     exit 1
-  fi
 fi
 
-: "${IP:=$(curl ifconfig.co)}"
-: "${PROXIED:=false}"
-echo "Current public IP: $IP" 1>&2
 
-# Dig the IP and exit out if it is still the same
-: "${RESOLVED_IP:=$(dig +short @1.1.1.1 $NAME | tail -n1)}"
-echo "Resolved IP: $RESOLVED_IP" 1>&2
-if [[ "${IP}" == "${RESOLVED_IP}" ]]; then
-  echo "IP has not changed. Exiting..."
-  exit 0
+# Get the Record ID
+if [[ -z $RECORD_ID ]]; then
+    echo "Fetching Record ID"
+    RECORD_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$RECORD_NAME.$ZONE_NAME" \
+    "${HEADERS[@]}" \
+    | jq -r '.result[0].id')
+    echo "Fetched Record ID: $RECORD_ID"
+    echo "RECORD_ID=$RECORD_ID" >> $CACHE_FILE
+else
+    echo "Using cached Record ID: $RECORD_ID"
 fi
 
-PAYLOAD="{\"type\":\"A\",\"name\":\"$NAME\",\"content\":\"$IP\",\"proxied\":$PROXIED,\"ttl\":1}"
-echo "Sending payload: $PAYLOAD" 1>&2
+# Check for a valid Record ID
+if [ -z "$RECORD_ID" ]; then
+    echo "Failed to retrieve Record ID"
+    exit 1
+fi
 
-# Assemble the whole command into an array, then execute.
-COMMAND=(
-  curl
-  -X PUT
-  "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID"
-  "${AUTH_HEADERS[@]}"
-  -H "Content-Type: application/json"
-  --data "$PAYLOAD"
-)
+# Get Your IP Address
+CURRENT_IP_ADDRESS=$(curl -s ifconfig.me)
 
-"${COMMAND[@]}"
-echo # end with line break
+if [[ $CURRENT_IP_ADDRESS == $CACHED_IP_ADDRESS ]]; then
+    echo "IP Address has not changed"
+    exit 0
+fi
+
+# If there is no cached IP, dig the IP and exit out if it is still the same
+if [[ -z $CACHED_IP_ADDRESS ]]; then
+    echo "Fetching DNS Record"
+    CACHED_IP_ADDRESS=$(dig +short $RECORD_NAME.$ZONE_NAME | tail -n1)
+    echo "Fetched DNS Record: $CACHED_IP_ADDRESS"
+    echo "CACHED_IP_ADDRESS=$CACHED_IP_ADDRESS" >> $CACHE_FILE
+    if [[ $CURRENT_IP_ADDRESS == $CACHED_IP_ADDRESS ]]; then
+        echo "IP Address has not changed"
+        exit 0
+    fi
+fi
+
+echo "IP Address has changed to $IP_ADDRESS"
+echo "CACHED_IP_ADDRESS=$IP_ADDRESS" >> $CACHE_FILE
+# Update the DNS record
+UPDATE_RESULT=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
+"${HEADERS[@]}" \
+--data '{"type":"A","name":"'"$RECORD_NAME"'","content":"'"$IP_ADDRESS"'","ttl":120,"proxied":false}' | jq -r '.success')
+
+# Check for a successful update
+if [ "$UPDATE_RESULT" != "true" ]; then
+    echo "Failed to update DNS record"
+    exit 1
+fi
+
+echo "DNS record updated successfully"
+
+
