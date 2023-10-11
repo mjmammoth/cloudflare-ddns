@@ -62,7 +62,21 @@ if [[ -z $CACHED_IP_ADDRESS ]]; then
 fi
 
 echo "IP Address has changed to $CURRENT_IP_ADDRESS"
-echo "CACHED_IP_ADDRESS=$CURRENT_IP_ADDRESS" >> $CACHE_FILE
+
+# Use grep to check if the CACHED_IP_ADDRESS line exists in the cache file
+grep -q "CACHED_IP_ADDRESS=" $CACHE_FILE
+
+# $? is a special variable that holds the exit status of the last command executed
+if [[ $? -eq 0 ]]; then
+    # If the line exists, use sed to replace it
+    TEMP_FILE=$(mktemp)
+    sed "s/CACHED_IP_ADDRESS=.*/CACHED_IP_ADDRESS=$CURRENT_IP_ADDRESS/" $CACHE_FILE > $TEMP_FILE
+    mv $TEMP_FILE $CACHE_FILE
+else
+    # If the line does not exist, append it to the file
+    echo "CACHED_IP_ADDRESS=$CURRENT_IP_ADDRESS" >> $CACHE_FILE
+fi
+
 # Update the DNS record
 UPDATE_RESULT=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
 "${HEADERS[@]}" \
