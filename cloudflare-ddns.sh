@@ -55,16 +55,14 @@ fi
 if [[ -z $CACHED_IP_ADDRESS ]]; then
     echo "Fetching DNS Record"
     CACHED_IP_ADDRESS=$(dig +short $RECORD_NAME.$ZONE_NAME | tail -n1)
-    echo "Fetched DNS Record: $CACHED_IP_ADDRESS"
-    echo "CACHED_IP_ADDRESS=$CACHED_IP_ADDRESS" >> $CACHE_FILE
     if [[ $CURRENT_IP_ADDRESS == $CACHED_IP_ADDRESS ]]; then
         echo "IP Address has not changed"
         exit 0
     fi
 fi
 
-echo "IP Address has changed to $IP_ADDRESS"
-echo "CACHED_IP_ADDRESS=$IP_ADDRESS" >> $CACHE_FILE
+echo "IP Address has changed to $CURRENT_IP_ADDRESS"
+echo "CACHED_IP_ADDRESS=$CURRENT_IP_ADDRESS" >> $CACHE_FILE
 # Update the DNS record
 UPDATE_RESULT=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
 "${HEADERS[@]}" \
