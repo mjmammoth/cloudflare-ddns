@@ -66,7 +66,7 @@ echo "CACHED_IP_ADDRESS=$CURRENT_IP_ADDRESS" >> $CACHE_FILE
 # Update the DNS record
 UPDATE_RESULT=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
 "${HEADERS[@]}" \
---data '{"type":"A","name":"'"$RECORD_NAME"'","content":"'"$IP_ADDRESS"'","ttl":120,"proxied":false}' | jq -r '.success')
+--data '{"type":"A","name":"'"$RECORD_NAME"'","content":"'"$CURRENT_IP_ADDRESS"'","ttl":120,"proxied":false}' | jq -r '.success')
 
 # Check for a successful update
 if [ "$UPDATE_RESULT" != "true" ]; then
