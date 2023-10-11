@@ -23,12 +23,12 @@ fi
 
 : "${IP:=$(curl ifconfig.co)}"
 : "${PROXIED:=false}"
-echo "Using IP: $IP" 1>&2
+echo "Current public IP: $IP" 1>&2
 
-# Dig the old IP and exit out if they are the same
-: "${OLD_IP:=$(dig +short @1.1.1.1 $NAME | tail -n1)}"
-echo "Using Old IP: $OLD_IP" 1>&2
-if [[ "${IP}" == "${OLD_IP}" ]]; then
+# Dig the IP and exit out if it is still the same
+: "${RESOLVED_IP:=$(dig +short @1.1.1.1 $NAME | tail -n1)}"
+echo "Resolved IP: $RESOLVED_IP" 1>&2
+if [[ "${IP}" == "${RESOLVED_IP}" ]]; then
   echo "IP has not changed. Exiting..."
   exit 0
 fi
